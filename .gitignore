@@ -36,3 +36,13 @@ Thumbs.db
 # Coverage reports
 htmlcov/
 .coverage
+
+# Ignore uploaded images
+uploads/*
+
+# Ignore saved embeddings
+embeddings/*
+
+# But keep the folders themselves
+!uploads/.gitkeep
+!embeddings/.gitkeep

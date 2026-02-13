@@ -1,0 +1,13 @@
+flask
+flask-cors
+python-dotenv
+torch
+torchvision
+ultralytics
+transformers
+Pillow
+numpy
+opencv-python
+scikit-learn
+faiss-cpu
+doctr
