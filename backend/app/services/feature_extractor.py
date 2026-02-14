@@ -83,7 +83,8 @@ def extract_features(image_path):
         "color_features": mean_color,
         "texture_features": texture,
         "clip_embedding_file": embedding_filename,
-        "clip_embedding_path": embedding_path
+        "clip_embedding_path": embedding_path,
+        "embed": clip_vector.tolist()
     }
 
 
