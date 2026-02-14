@@ -3,6 +3,7 @@ from flask_cors import CORS
 from app.routes.features import features_bp
 from app.routes.search import search_bp
 from app.routes.auth import auth_bp
+from app.routes.llm import llm_bp
 
 def create_app():
     app = Flask(__name__)
@@ -11,5 +12,7 @@ def create_app():
     app.register_blueprint(features_bp)
     app.register_blueprint(search_bp)
     app.register_blueprint(auth_bp)
+    app.register_blueprint(llm_bp)
 
     return app
+

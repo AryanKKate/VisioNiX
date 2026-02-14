@@ -12,3 +12,5 @@ scikit-learn
 faiss-cpu
 doctr
 supabase
+requests
+
