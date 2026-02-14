@@ -40,10 +40,10 @@ def generate_with_ollama(
     features: dict,
     image_path: str,
     user_prompt: str | None = None,
+    ollama_model: str | None = None,
 ) -> str:
-    """Generate a natural-language response using Ollama vision models when available."""
     ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    ollama_model = os.getenv("OLLAMA_MODEL", "qwen3vl:8b")
+    model_name = ollama_model or os.getenv("OLLAMA_MODEL", "qwen3-vl:8b")
 
     prompt = _build_prompt(features, user_prompt=user_prompt)
     image_b64 = _encode_image_base64(image_path)
@@ -55,7 +55,7 @@ def generate_with_ollama(
         chat_data = _post_json(
             chat_url,
             {
-                "model": ollama_model,
+                "model": model_name,
                 "stream": False,
                 "messages": [
                     {
@@ -71,11 +71,10 @@ def generate_with_ollama(
         if content:
             return content
     except requests.RequestException:
-        # Fallback for non-vision models/endpoints.
         pass
 
     generate_data = _post_json(
         generate_url,
-        {"model": ollama_model, "prompt": prompt, "stream": False},
+        {"model": model_name, "prompt": prompt, "stream": False},
     )
     return generate_data.get("response", "")

@@ -12,8 +12,10 @@ export default function ChatWindow({ model }) {
     },
   ]);
   const [input, setInput] = useState('');
+  const [selectedFile, setSelectedFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef(null);
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:5000';
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -25,31 +27,68 @@ export default function ChatWindow({ model }) {
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    
+
     if (!input.trim()) return;
+    if (!selectedFile) {
+      setMessages(prev => [
+        ...prev,
+        {
+          id: prev.length + 1,
+          type: 'bot',
+          content: 'Please upload an image before sending a prompt.',
+          timestamp: new Date(),
+        },
+      ]);
+      return;
+    }
 
     const userMessage = {
       id: messages.length + 1,
       type: 'user',
-      content: input,
+      content: `${input}\n[Image: ${selectedFile.name}]`,
       timestamp: new Date(),
     };
 
     setMessages(prev => [...prev, userMessage]);
+    const prompt = input;
     setInput('');
     setLoading(true);
 
-    // Simulate bot response
-    setTimeout(() => {
+    try {
+      const formData = new FormData();
+      formData.append('image', selectedFile);
+      formData.append('prompt', prompt);
+      formData.append('model', 'qwen3-vl:8b');
+
+      const response = await fetch(`${apiBaseUrl}/describe`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Request failed');
+      }
+
       const botMessage = {
         id: messages.length + 2,
         type: 'bot',
-        content: `Analyzing with ${model} model...`,
+        content: data.llm_response || `Analysis completed with ${data.model || model}.`,
         timestamp: new Date(),
       };
       setMessages(prev => [...prev, botMessage]);
+      setSelectedFile(null);
+    } catch (error) {
+      const errorMessage = {
+        id: messages.length + 2,
+        type: 'bot',
+        content: `Ollama pipeline error: ${error.message}`,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
       setLoading(false);
-    }, 1000);
+    }
   };
 
   return (
@@ -86,7 +125,14 @@ export default function ChatWindow({ model }) {
       {/* Input Area */}
       <div className="border-t border-border p-6 bg-primary">
         <form onSubmit={handleSendMessage} className="max-w-4xl mx-auto">
-          <div className="flex gap-3">
+          <div className="flex gap-3 items-center">
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+              className="text-sm text-light file:mr-3 file:px-3 file:py-2 file:rounded-lg file:border-0 file:bg-surface-light file:text-light"
+              disabled={loading}
+            />
             <input
               type="text"
               value={input}
@@ -97,12 +143,17 @@ export default function ChatWindow({ model }) {
             />
             <button
               type="submit"
-              disabled={loading || !input.trim()}
+              disabled={loading || !input.trim() || !selectedFile}
               className="p-3 bg-surface-light text-light rounded-lg hover:bg-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Send size={20} />
             </button>
           </div>
+          {selectedFile && (
+            <p className="mt-2 text-xs text-text-secondary">
+              Ready: {selectedFile.name}
+            </p>
+          )}
         </form>
       </div>
     </div>

@@ -18,6 +18,7 @@ def describe_image():
         return jsonify({"error": "Empty file name"}), 400
 
     prompt = request.form.get("prompt")
+    model = (request.form.get("model") or "").strip() or None
 
     os.makedirs("uploads", exist_ok=True)
     filename = secure_filename(file.filename)
@@ -31,19 +32,21 @@ def describe_image():
             features=features,
             image_path=path,
             user_prompt=prompt,
+            ollama_model=model,
         )
     except Exception as exc:
         return jsonify(
             {
                 "error": "Ollama request failed",
                 "details": str(exc),
+                "model": model or os.getenv("OLLAMA_MODEL", "qwen3-vl:8b"),
                 "features": features,
             }
         ), 502
 
     return jsonify(
         {
-            "model": os.getenv("OLLAMA_MODEL", "qwen3vl:8b"),
+            "model": model or os.getenv("OLLAMA_MODEL", "qwen3-vl:8b"),
             "features": features,
             "llm_response": llm_text,
         }
