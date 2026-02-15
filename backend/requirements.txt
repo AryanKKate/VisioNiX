@@ -10,5 +10,7 @@ numpy
 opencv-python
 scikit-learn
 faiss-cpu
-doctr
+python-doctr[torch]
 supabase
+requests
+
