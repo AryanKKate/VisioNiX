@@ -2,19 +2,34 @@ import { useState, useRef, useEffect } from 'react';
 import { Send } from 'lucide-react';
 import Message from './Message';
 
+const getInitialMessages = () => [
+  {
+    id: 'bot-welcome',
+    type: 'bot',
+    content: 'How can I help you today?',
+    timestamp: new Date(),
+  },
+];
+
+const createMessageId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+const resolveOllamaModel = (uiModel) => {
+  const modelMap = {
+    normal: 'qwen3-vl:8b',
+    yolo: 'qwen3-vl:8b',
+    clip: 'qwen3-vl:8b',
+    custom: 'qwen3-vl:8b',
+  };
+  return modelMap[uiModel] || 'qwen3-vl:8b';
+};
+
 export default function ChatWindow({ model }) {
-  const [messages, setMessages] = useState([
-    {
-      id: 1,
-      type: 'bot',
-      content: 'How can I help you today?',
-      timestamp: new Date(),
-    },
-  ]);
+  const [messages, setMessages] = useState(getInitialMessages());
   const [input, setInput] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef(null);
+  const previewUrlsRef = useRef([]);
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:5000';
 
   const scrollToBottom = () => {
@@ -25,6 +40,13 @@ export default function ChatWindow({ model }) {
     scrollToBottom();
   }, [messages]);
 
+  useEffect(() => {
+    return () => {
+      previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      previewUrlsRef.current = [];
+    };
+  }, []);
+
   const handleSendMessage = async (e) => {
     e.preventDefault();
 
@@ -33,7 +55,7 @@ export default function ChatWindow({ model }) {
       setMessages(prev => [
         ...prev,
         {
-          id: prev.length + 1,
+          id: createMessageId(),
           type: 'bot',
           content: 'Please upload an image before sending a prompt.',
           timestamp: new Date(),
@@ -42,10 +64,14 @@ export default function ChatWindow({ model }) {
       return;
     }
 
+    const imagePreviewUrl = URL.createObjectURL(selectedFile);
+    previewUrlsRef.current.push(imagePreviewUrl);
+
     const userMessage = {
-      id: messages.length + 1,
+      id: createMessageId(),
       type: 'user',
-      content: `${input}\n[Image: ${selectedFile.name}]`,
+      content: input,
+      imageUrl: imagePreviewUrl,
       timestamp: new Date(),
     };
 
@@ -58,20 +84,20 @@ export default function ChatWindow({ model }) {
       const formData = new FormData();
       formData.append('image', selectedFile);
       formData.append('prompt', prompt);
-      formData.append('model', 'qwen3-vl:8b');
+      formData.append('model', resolveOllamaModel(model));
 
       const response = await fetch(`${apiBaseUrl}/describe`, {
         method: 'POST',
         body: formData,
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(data.error || 'Request failed');
       }
 
       const botMessage = {
-        id: messages.length + 2,
+        id: createMessageId(),
         type: 'bot',
         content: data.llm_response || `Analysis completed with ${data.model || model}.`,
         timestamp: new Date(),
@@ -80,7 +106,7 @@ export default function ChatWindow({ model }) {
       setSelectedFile(null);
     } catch (error) {
       const errorMessage = {
-        id: messages.length + 2,
+        id: createMessageId(),
         type: 'bot',
         content: `Ollama pipeline error: ${error.message}`,
         timestamp: new Date(),

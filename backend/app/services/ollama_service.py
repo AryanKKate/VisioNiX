@@ -9,15 +9,50 @@ import requests
 logger = logging.getLogger(__name__)
 
 
+def _wants_brief_response(query: str) -> bool:
+    q = (query or "").lower()
+    brief_keywords = (
+        "brief",
+        "short",
+        "concise",
+        "one line",
+        "single line",
+        "in short",
+        "tldr",
+        "summarize",
+        "summary",
+    )
+    return any(k in q for k in brief_keywords)
+
+
+def _is_sufficient_response(text: str, query: str, min_chars: int) -> bool:
+    content = (text or "").strip()
+    if not content:
+        return False
+    if _wants_brief_response(query):
+        return True
+    return len(content) >= min_chars
+
+
 def _build_prompt(features: dict, user_prompt: str | None = None) -> str:
     query = (user_prompt or "").strip() or "Describe this image in detail."
+    brief_mode = _wants_brief_response(query)
+    style_policy = (
+        "- Write in complete paragraphs.\n"
+        "- Keep the answer concise (2-5 sentences) because the user asked for brief output.\n"
+        "- Do not use bullet points unless the user explicitly asks for bullets.\n"
+    ) if brief_mode else (
+        "- Write in complete paragraphs.\n"
+        "- By default provide 3-5 well-structured paragraphs with reasoning.\n"
+        "- Target roughly 220-350 words unless the user asks for a shorter answer.\n"
+        "- Do not use bullet points unless the user explicitly asks for bullets.\n"
+        "- Do not stop mid-sentence.\n"
+    )
     return (
         "You are a visual reasoning assistant. Use both the uploaded image and the provided structured signals "
         "to answer the user's query accurately.\n\n"
         "Response style policy:\n"
-        "- Write in complete paragraphs.\n"
-        "- By default provide 2-3 well-structured paragraphs with reasoning.\n"
-        "- Do not use bullet points unless the user explicitly asks for bullets.\n"
+        f"{style_policy}"
         "- If the user asks for brief output, keep it brief.\n\n"
         "Output policy:\n"
         "- Return only the answer to the user query.\n"
@@ -95,11 +130,13 @@ def generate_with_ollama(
     model_name = ollama_model or os.getenv("OLLAMA_MODEL", "qwen3-vl:8b")
     timeout = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "120"))
     max_retries = int(os.getenv("OLLAMA_MAX_RETRIES", "1"))
-    num_predict = int(os.getenv("OLLAMA_NUM_PREDICT", "512"))
+    num_predict = int(os.getenv("OLLAMA_NUM_PREDICT", "1024"))
+    min_detailed_chars = int(os.getenv("OLLAMA_MIN_DETAILED_CHARS", "260"))
 
     prompt = _build_prompt(features, user_prompt=user_prompt)
     query_text = (user_prompt or "").strip() or "Describe this image in detail."
     image_b64 = _encode_image_base64(image_path)
+    candidates: list[str] = []
 
     chat_url = f"{ollama_base_url}/api/chat"
     generate_url = f"{ollama_base_url}/api/generate"
@@ -125,6 +162,8 @@ def generate_with_ollama(
         )
         content = _extract_text(chat_data)
         if content:
+            candidates.append(content)
+        if _is_sufficient_response(content, query_text, min_detailed_chars):
             return content
         logger.warning(
             json.dumps(
@@ -132,6 +171,8 @@ def generate_with_ollama(
                     "event": "ollama_empty_response",
                     "endpoint": "chat_primary",
                     "model": model_name,
+                    "reason": "empty_or_too_short",
+                    "length": len((content or "").strip()),
                 }
             )
         )
@@ -146,8 +187,10 @@ def generate_with_ollama(
         )
 
     retry_prompt = (
-        "Answer the user's query directly using the image in complete paragraphs. "
-        "Provide 2-3 concise paragraphs by default. "
+        "Answer the user's query directly using the image. "
+        "Your previous answer was too short. "
+        "Now provide 3-5 detailed paragraphs (around 220-350 words) with clear reasoning and concrete visual evidence. "
+        "Do not use bullets unless asked. Do not stop mid-sentence. "
         "If uncertain, say so briefly.\n\n"
         f"User query: {query_text}"
     )
@@ -172,6 +215,8 @@ def generate_with_ollama(
         )
         retry_content = _extract_text(retry_data)
         if retry_content:
+            candidates.append(retry_content)
+        if _is_sufficient_response(retry_content, query_text, min_detailed_chars):
             return retry_content
         logger.warning(
             json.dumps(
@@ -179,6 +224,8 @@ def generate_with_ollama(
                     "event": "ollama_empty_response",
                     "endpoint": "chat_retry",
                     "model": model_name,
+                    "reason": "empty_or_too_short",
+                    "length": len((retry_content or "").strip()),
                 }
             )
         )
@@ -208,6 +255,8 @@ def generate_with_ollama(
         )
         generate_content = _extract_text(generate_data)
         if generate_content:
+            candidates.append(generate_content)
+        if _is_sufficient_response(generate_content, query_text, min_detailed_chars):
             return generate_content
     except requests.RequestException:
         logger.warning(
@@ -218,6 +267,10 @@ def generate_with_ollama(
                 }
             )
         )
+
+    if candidates:
+        candidates.sort(key=lambda c: len((c or "").strip()), reverse=True)
+        return candidates[0].strip()
 
     caption = str(features.get("caption", "")).strip()
     if caption:
