@@ -1,8 +1,10 @@
 import { useAuth } from '../hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Plus, MessageSquare, Trash2, LogOut, Image, ChevronDown, Search } from 'lucide-react';
 import ChatWindow from '../components/ChatWindow';
+
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:5000';
 
 export default function ChatPage() {
   const { user, logout } = useAuth();
@@ -10,6 +12,10 @@ export default function ChatPage() {
   const [selectedModel, setSelectedModel] = useState('normal');
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [chats, setChats] = useState([]);
+  const [activeChatId, setActiveChatId] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  const token = useMemo(() => localStorage.getItem('token'), []);
 
   useEffect(() => {
     if (!user) {
@@ -17,32 +23,106 @@ export default function ChatPage() {
     }
   }, [user, navigate]);
 
+  const loadRooms = useCallback(async () => {
+    if (!token) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/chat/rooms`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to fetch rooms');
+      }
+
+      const rooms = data.rooms || [];
+      setChats(rooms);
+      setActiveChatId((prev) => {
+        if (prev && rooms.some((room) => room.id === prev)) {
+          return prev;
+        }
+        return rooms[0]?.id || null;
+      });
+    } catch {
+      setChats([]);
+      setActiveChatId(null);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    loadRooms();
+  }, [loadRooms]);
+
   const handleLogout = () => {
     logout();
     navigate('/');
   };
 
-  const handleNewChat = () => {
-    const newChat = {
-      id: Date.now().toString(),
-      title: 'New Chat',
-      timestamp: new Date(),
-    };
-    setChats(prev => [newChat, ...prev]);
+  const handleNewChat = async () => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/chat/rooms`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ title: 'New Chat' }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create room');
+      }
+
+      const newRoom = data.room;
+      setChats((prev) => [newRoom, ...prev]);
+      setActiveChatId(newRoom.id);
+    } catch {
+      // noop
+    }
   };
 
-  const handleDeleteChat = (id) => {
-    setChats(prev => prev.filter(chat => chat.id !== id));
+  const handleDeleteChat = async (id) => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/chat/rooms/${id}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to delete room');
+      }
+
+      setChats((prev) => {
+        const filtered = prev.filter((chat) => chat.id !== id);
+        if (activeChatId === id) {
+          setActiveChatId(filtered[0]?.id || null);
+        }
+        return filtered;
+      });
+    } catch {
+      // noop
+    }
   };
 
   const models = [
     { id: 'normal', label: 'Normal' },
-    { id: 'yolo', label: 'YOLO' },
-    { id: 'clip', label: 'CLIP' },
-    { id: 'custom', label: 'Custom' },
+    { id: 'qwen3-vl:8b', label: 'Qwen3-VL' },
   ];
 
-  const currentModel = models.find(m => m.id === selectedModel);
+  const currentModel = models.find((m) => m.id === selectedModel);
+
+  const filteredChats = chats.filter((chat) =>
+    (chat.title || 'Untitled Chat').toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   if (!user) {
     return null;
@@ -50,9 +130,7 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-screen bg-primary">
-      {/* Left Sidebar - ChatGPT Style */}
       <div className="w-64 bg-secondary border-r border-border flex flex-col h-screen">
-        {/* New Chat Button */}
         <div className="p-4 border-b border-border">
           <button
             onClick={handleNewChat}
@@ -63,33 +141,39 @@ export default function ChatPage() {
           </button>
         </div>
 
-        {/* Search Chats */}
         <div className="p-4 border-b border-border">
           <div className="relative">
             <Search className="absolute left-3 top-3 text-text-secondary" size={18} />
             <input
               type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search chats..."
               className="w-full pl-10 pr-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-surface-light focus:border-transparent text-sm bg-primary text-light placeholder-text-secondary"
             />
           </div>
         </div>
 
-        {/* Chat History */}
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
           <div className="text-xs font-semibold text-text-secondary uppercase px-2 mb-3">Recent</div>
-          {chats && chats.length > 0 ? (
-            chats.map((chat) => (
+          {filteredChats.length > 0 ? (
+            filteredChats.map((chat) => (
               <div
                 key={chat.id}
-                className="p-3 rounded-lg cursor-pointer flex items-center justify-between group hover:bg-hover transition-colors text-light"
+                onClick={() => setActiveChatId(chat.id)}
+                className={`p-3 rounded-lg cursor-pointer flex items-center justify-between group transition-colors text-light ${
+                  activeChatId === chat.id ? 'bg-hover' : 'hover:bg-hover'
+                }`}
               >
                 <div className="flex items-center gap-2 flex-1 min-w-0">
                   <MessageSquare size={16} className="flex-shrink-0" />
-                  <span className="text-sm truncate">{chat.title}</span>
+                  <span className="text-sm truncate">{chat.title || 'Untitled Chat'}</span>
                 </div>
                 <button
-                  onClick={() => handleDeleteChat(chat.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteChat(chat.id);
+                  }}
                   className="opacity-0 group-hover:opacity-100 p-1 hover:bg-border rounded transition-all"
                 >
                   <Trash2 size={16} />
@@ -101,7 +185,6 @@ export default function ChatPage() {
           )}
         </div>
 
-        {/* User Section */}
         <div className="p-4 border-t border-border">
           <button
             onClick={handleLogout}
@@ -113,13 +196,10 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {/* Main Content */}
       <div className="flex-1 flex flex-col bg-primary">
-        {/* Header with Model Dropdown */}
         <div className="border-b border-border px-6 py-4 flex items-center justify-between bg-primary">
           <div></div>
 
-          {/* Model Dropdown - Center */}
           <div className="relative">
             <button
               onClick={() => setShowModelDropdown(!showModelDropdown)}
@@ -131,7 +211,7 @@ export default function ChatPage() {
 
             {showModelDropdown && (
               <div className="absolute left-1/2 -translate-x-1/2 mt-2 w-40 bg-secondary border border-border rounded-lg shadow-lg z-50">
-                {models.map(model => (
+                {models.map((model) => (
                   <button
                     key={model.id}
                     onClick={() => {
@@ -149,7 +229,6 @@ export default function ChatPage() {
             )}
           </div>
 
-          {/* Right Icons */}
           <div className="flex items-center gap-4">
             <button
               onClick={() => navigate('/extractions')}
@@ -161,8 +240,7 @@ export default function ChatPage() {
           </div>
         </div>
 
-        {/* Chat Window */}
-        <ChatWindow model={selectedModel} />
+        <ChatWindow model={selectedModel} roomId={activeChatId} onRoomRefreshNeeded={loadRooms} />
       </div>
     </div>
   );

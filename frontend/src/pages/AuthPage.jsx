@@ -26,7 +26,11 @@ export default function AuthPage() {
           setLoading(false);
           return;
         }
-        await login(email, password);
+        const result = await login(email, password);
+        if (!result.success) {
+          setError(result.error || 'Unable to sign in');
+          return;
+        }
         navigate('/chat');
       } else {
         if (!name || !email || !password) {
@@ -34,7 +38,11 @@ export default function AuthPage() {
           setLoading(false);
           return;
         }
-        await signup(email, password, name);
+        const result = await signup(email, password, name);
+        if (!result.success) {
+          setError(result.error || 'Unable to sign up');
+          return;
+        }
         navigate('/chat');
       }
     } catch (err) {
