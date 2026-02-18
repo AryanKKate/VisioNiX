@@ -1,8 +1,10 @@
 import { useAuth } from '../hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Plus, MessageSquare, Trash2, LogOut, Image, ChevronDown, Search } from 'lucide-react';
 import ChatWindow from '../components/ChatWindow';
+
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:5000';
 
 export default function ChatPage() {
   const { user, logout } = useAuth();
@@ -17,6 +19,41 @@ export default function ChatPage() {
       navigate('/');
     }
   }, [user, navigate]);
+
+  const loadRooms = useCallback(async () => {
+    if (!token) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/chat/rooms`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to fetch rooms');
+      }
+
+      const rooms = data.rooms || [];
+      setChats(rooms);
+      setActiveChatId((prev) => {
+        if (prev && rooms.some((room) => room.id === prev)) {
+          return prev;
+        }
+        return rooms[0]?.id || null;
+      });
+    } catch {
+      setChats([]);
+      setActiveChatId(null);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    loadRooms();
+  }, [loadRooms]);
 
   const handleLogout = () => {
     logout();
@@ -45,12 +82,14 @@ export default function ChatPage() {
 
   const models = [
     { id: 'normal', label: 'Normal' },
-    { id: 'yolo', label: 'YOLO' },
-    { id: 'clip', label: 'CLIP' },
-    { id: 'custom', label: 'Custom' },
+    { id: 'qwen3-vl:8b', label: 'Qwen3-VL' },
   ];
 
-  const currentModel = models.find(m => m.id === selectedModel);
+  const currentModel = models.find((m) => m.id === selectedModel);
+
+  const filteredChats = chats.filter((chat) =>
+    (chat.title || 'Untitled Chat').toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   useEffect(() => {
     if (user && chats.length === 0) {
@@ -70,9 +109,7 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-screen bg-primary">
-      {/* Left Sidebar - ChatGPT Style */}
       <div className="w-64 bg-secondary border-r border-border flex flex-col h-screen">
-        {/* New Chat Button */}
         <div className="p-4 border-b border-border">
           <button
             onClick={handleNewChat}
@@ -83,23 +120,23 @@ export default function ChatPage() {
           </button>
         </div>
 
-        {/* Search Chats */}
         <div className="p-4 border-b border-border">
           <div className="relative">
             <Search className="absolute left-3 top-3 text-text-secondary" size={18} />
             <input
               type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search chats..."
               className="w-full pl-10 pr-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-surface-light focus:border-transparent text-sm bg-primary text-light placeholder-text-secondary"
             />
           </div>
         </div>
 
-        {/* Chat History */}
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
           <div className="text-xs font-semibold text-text-secondary uppercase px-2 mb-3">Recent</div>
-          {chats && chats.length > 0 ? (
-            chats.map((chat) => (
+          {filteredChats.length > 0 ? (
+            filteredChats.map((chat) => (
               <div
                 key={chat.id}
                 onClick={() => setCurrentChatId(chat.id)}
@@ -109,7 +146,7 @@ export default function ChatPage() {
               >
                 <div className="flex items-center gap-2 flex-1 min-w-0">
                   <MessageSquare size={16} className="flex-shrink-0" />
-                  <span className="text-sm truncate">{chat.title}</span>
+                  <span className="text-sm truncate">{chat.title || 'Untitled Chat'}</span>
                 </div>
                 <button
                   onClick={(e) => {
@@ -127,7 +164,6 @@ export default function ChatPage() {
           )}
         </div>
 
-        {/* User Section */}
         <div className="p-4 border-t border-border">
           <button
             onClick={handleLogout}
@@ -139,13 +175,10 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {/* Main Content */}
       <div className="flex-1 flex flex-col bg-primary">
-        {/* Header with Model Dropdown */}
         <div className="border-b border-border px-6 py-4 flex items-center justify-between bg-primary">
           <div></div>
 
-          {/* Model Dropdown - Center */}
           <div className="relative">
             <button
               onClick={() => setShowModelDropdown(!showModelDropdown)}
@@ -157,7 +190,7 @@ export default function ChatPage() {
 
             {showModelDropdown && (
               <div className="absolute left-1/2 -translate-x-1/2 mt-2 w-40 bg-secondary border border-border rounded-lg shadow-lg z-50">
-                {models.map(model => (
+                {models.map((model) => (
                   <button
                     key={model.id}
                     onClick={() => {
@@ -175,7 +208,6 @@ export default function ChatPage() {
             )}
           </div>
 
-          {/* Right Icons */}
           <div className="flex items-center gap-4">
             <button
               onClick={() => navigate('/extractions')}

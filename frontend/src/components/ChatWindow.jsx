@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { Send } from 'lucide-react';
 import Message from './Message';
 
@@ -30,6 +30,7 @@ export default function ChatWindow({ model, currentChatId }) {
   const [sessionId, setSessionId] = useState(null);
   const [sessionImageFile, setSessionImageFile] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const messagesEndRef = useRef(null);
   const previewUrlsRef = useRef([]);
   const sessionIdRef = useRef(null);
@@ -120,6 +121,7 @@ export default function ChatWindow({ model, currentChatId }) {
     setMessages(prev => [...prev, userMessage]);
     setInput('');
     setLoading(true);
+    setError('');
 
     try {
       const formData = new FormData();
@@ -133,12 +135,15 @@ export default function ChatWindow({ model, currentChatId }) {
 
       const response = await fetch(`${apiBaseUrl}/reason`, {
         method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
         body: formData,
       });
 
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(data.error || 'Request failed');
+        throw new Error(data.error || 'Failed to send message');
       }
 
       const botMessage = {
@@ -166,38 +171,40 @@ export default function ChatWindow({ model, currentChatId }) {
     }
   };
 
+  const isEmptyState = messages.length === 0;
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-primary">
-      {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-6 space-y-4">
-        {messages.length === 1 && messages[0].type === 'bot' && messages[0].content === 'How can I help you today?' ? (
-          // Empty State
+        {!roomId ? (
+          <div className="h-full flex items-center justify-center text-text-secondary">Create a new chat to begin.</div>
+        ) : isEmptyState ? (
           <div className="h-full flex items-center justify-center">
             <div className="text-center">
               <h2 className="text-4xl font-bold text-light mb-2">How can I help you?</h2>
-              <p className="text-text-secondary">Ask me anything about image analysis, vision tasks, or upload an image to analyze.</p>
+              <p className="text-text-secondary">Ask anything and optionally attach an image for context.</p>
             </div>
           </div>
         ) : (
-          messages.map(msg => (
-            <Message key={msg.id} message={msg} />
-          ))
+          messages.map((msg) => <Message key={msg.id} message={msg} />)
         )}
+
         {loading && (
           <div className="flex justify-start">
             <div className="bg-surface rounded-lg px-4 py-3 max-w-2xl">
               <div className="flex gap-2">
                 <div className="w-2 h-2 bg-text-secondary rounded-full animate-bounce"></div>
-                <div className="w-2 h-2 bg-text-secondary rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-                <div className="w-2 h-2 bg-text-secondary rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                <div className="w-2 h-2 bg-text-secondary rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                <div className="w-2 h-2 bg-text-secondary rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
               </div>
             </div>
           </div>
         )}
+
+        {error && <p className="text-sm text-red-400">{error}</p>}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Area */}
       <div className="border-t border-border p-6 bg-primary">
         <form onSubmit={handleSendMessage} className="max-w-4xl mx-auto">
           <div className="flex gap-3 items-center">
@@ -214,7 +221,7 @@ export default function ChatWindow({ model, currentChatId }) {
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ask anything"
               className="flex-1 px-4 py-3 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-surface-light focus:border-transparent bg-secondary text-light placeholder-text-secondary"
-              disabled={loading}
+              disabled={loading || !roomId}
             />
             <button
               type="submit"
