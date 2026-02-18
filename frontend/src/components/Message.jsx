@@ -17,7 +17,14 @@ export default function Message({ message }) {
             ? 'bg-surface-light text-light rounded-br-none'
             : 'bg-surface text-light rounded-bl-none'
         }`}>
-          <p className="text-sm leading-relaxed">{message.content}</p>
+          {message.imageUrl && (
+            <img
+              src={message.imageUrl}
+              alt="Uploaded"
+              className="w-full max-w-md mb-3 rounded-lg border border-border object-cover"
+            />
+          )}
+          <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
         </div>
       </div>
     </div>
