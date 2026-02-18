@@ -7,7 +7,9 @@ import ChatWindow from '../components/ChatWindow';
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:5000';
 
 export default function ChatPage() {
-  const { user, logout } = useAuth();
+  const { user, logout, token } = useAuth();
+  const [searchTerm, setSearchTerm] = useState('');
+
   const navigate = useNavigate();
   const [selectedModel, setSelectedModel] = useState('normal');
   const [showModelDropdown, setShowModelDropdown] = useState(false);
@@ -39,12 +41,13 @@ export default function ChatPage() {
 
       const rooms = data.rooms || [];
       setChats(rooms);
-      setActiveChatId((prev) => {
-        if (prev && rooms.some((room) => room.id === prev)) {
-          return prev;
-        }
-        return rooms[0]?.id || null;
-      });
+      setCurrentChatId((prev) => {
+  if (prev && rooms.some((room) => room.id === prev)) {
+    return prev;
+  }
+  return rooms[0]?.id || null;
+});
+
     } catch {
       setChats([]);
       setActiveChatId(null);
@@ -53,7 +56,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     loadRooms();
-  }, [loadRooms]);
+  }, []);
 
   const handleLogout = () => {
     logout();
