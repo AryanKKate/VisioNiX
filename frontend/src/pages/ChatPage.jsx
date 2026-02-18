@@ -12,10 +12,7 @@ export default function ChatPage() {
   const [selectedModel, setSelectedModel] = useState('normal');
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [chats, setChats] = useState([]);
-  const [activeChatId, setActiveChatId] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
-
-  const token = useMemo(() => localStorage.getItem('token'), []);
+  const [currentChatId, setCurrentChatId] = useState(null);
 
   useEffect(() => {
     if (!user) {
@@ -63,54 +60,24 @@ export default function ChatPage() {
     navigate('/');
   };
 
-  const handleNewChat = async () => {
-    try {
-      const response = await fetch(`${apiBaseUrl}/chat/rooms`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ title: 'New Chat' }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to create room');
-      }
-
-      const newRoom = data.room;
-      setChats((prev) => [newRoom, ...prev]);
-      setActiveChatId(newRoom.id);
-    } catch {
-      // noop
-    }
+  const handleNewChat = () => {
+    const newChat = {
+      id: Date.now().toString(),
+      title: 'New Chat',
+      timestamp: new Date(),
+    };
+    setChats(prev => [newChat, ...prev]);
+    setCurrentChatId(newChat.id);
   };
 
-  const handleDeleteChat = async (id) => {
-    try {
-      const response = await fetch(`${apiBaseUrl}/chat/rooms/${id}`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Failed to delete room');
+  const handleDeleteChat = (id) => {
+    setChats(prev => {
+      const updated = prev.filter(chat => chat.id !== id);
+      if (currentChatId === id) {
+        setCurrentChatId(updated.length > 0 ? updated[0].id : null);
       }
-
-      setChats((prev) => {
-        const filtered = prev.filter((chat) => chat.id !== id);
-        if (activeChatId === id) {
-          setActiveChatId(filtered[0]?.id || null);
-        }
-        return filtered;
-      });
-    } catch {
-      // noop
-    }
+      return updated;
+    });
   };
 
   const models = [
@@ -123,6 +90,18 @@ export default function ChatPage() {
   const filteredChats = chats.filter((chat) =>
     (chat.title || 'Untitled Chat').toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  useEffect(() => {
+    if (user && chats.length === 0) {
+      const initialChat = {
+        id: Date.now().toString(),
+        title: 'New Chat',
+        timestamp: new Date(),
+      };
+      setChats([initialChat]);
+      setCurrentChatId(initialChat.id);
+    }
+  }, [user, chats.length]);
 
   if (!user) {
     return null;
@@ -160,9 +139,9 @@ export default function ChatPage() {
             filteredChats.map((chat) => (
               <div
                 key={chat.id}
-                onClick={() => setActiveChatId(chat.id)}
+                onClick={() => setCurrentChatId(chat.id)}
                 className={`p-3 rounded-lg cursor-pointer flex items-center justify-between group transition-colors text-light ${
-                  activeChatId === chat.id ? 'bg-hover' : 'hover:bg-hover'
+                  currentChatId === chat.id ? 'bg-hover' : 'hover:bg-hover'
                 }`}
               >
                 <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -240,7 +219,8 @@ export default function ChatPage() {
           </div>
         </div>
 
-        <ChatWindow model={selectedModel} roomId={activeChatId} onRoomRefreshNeeded={loadRooms} />
+        {/* Chat Window */}
+        <ChatWindow model={selectedModel} currentChatId={currentChatId} />
       </div>
     </div>
   );
