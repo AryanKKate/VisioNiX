@@ -10,6 +10,7 @@ export default function ChatPage() {
   const [selectedModel, setSelectedModel] = useState('normal');
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [chats, setChats] = useState([]);
+  const [currentChatId, setCurrentChatId] = useState(null);
 
   useEffect(() => {
     if (!user) {
@@ -29,10 +30,17 @@ export default function ChatPage() {
       timestamp: new Date(),
     };
     setChats(prev => [newChat, ...prev]);
+    setCurrentChatId(newChat.id);
   };
 
   const handleDeleteChat = (id) => {
-    setChats(prev => prev.filter(chat => chat.id !== id));
+    setChats(prev => {
+      const updated = prev.filter(chat => chat.id !== id);
+      if (currentChatId === id) {
+        setCurrentChatId(updated.length > 0 ? updated[0].id : null);
+      }
+      return updated;
+    });
   };
 
   const models = [
@@ -43,6 +51,18 @@ export default function ChatPage() {
   ];
 
   const currentModel = models.find(m => m.id === selectedModel);
+
+  useEffect(() => {
+    if (user && chats.length === 0) {
+      const initialChat = {
+        id: Date.now().toString(),
+        title: 'New Chat',
+        timestamp: new Date(),
+      };
+      setChats([initialChat]);
+      setCurrentChatId(initialChat.id);
+    }
+  }, [user, chats.length]);
 
   if (!user) {
     return null;
@@ -82,14 +102,20 @@ export default function ChatPage() {
             chats.map((chat) => (
               <div
                 key={chat.id}
-                className="p-3 rounded-lg cursor-pointer flex items-center justify-between group hover:bg-hover transition-colors text-light"
+                onClick={() => setCurrentChatId(chat.id)}
+                className={`p-3 rounded-lg cursor-pointer flex items-center justify-between group transition-colors text-light ${
+                  currentChatId === chat.id ? 'bg-hover' : 'hover:bg-hover'
+                }`}
               >
                 <div className="flex items-center gap-2 flex-1 min-w-0">
                   <MessageSquare size={16} className="flex-shrink-0" />
                   <span className="text-sm truncate">{chat.title}</span>
                 </div>
                 <button
-                  onClick={() => handleDeleteChat(chat.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteChat(chat.id);
+                  }}
                   className="opacity-0 group-hover:opacity-100 p-1 hover:bg-border rounded transition-all"
                 >
                   <Trash2 size={16} />
@@ -162,7 +188,7 @@ export default function ChatPage() {
         </div>
 
         {/* Chat Window */}
-        <ChatWindow model={selectedModel} />
+        <ChatWindow model={selectedModel} currentChatId={currentChatId} />
       </div>
     </div>
   );

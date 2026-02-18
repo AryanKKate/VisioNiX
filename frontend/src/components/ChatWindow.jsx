@@ -23,17 +23,33 @@ const resolveOllamaModel = (uiModel) => {
   return modelMap[uiModel] || 'qwen3-vl:8b';
 };
 
-export default function ChatWindow({ model }) {
+export default function ChatWindow({ model, currentChatId }) {
   const [messages, setMessages] = useState(getInitialMessages());
   const [input, setInput] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
+  const [sessionId, setSessionId] = useState(null);
+  const [sessionImageFile, setSessionImageFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef(null);
   const previewUrlsRef = useRef([]);
+  const sessionIdRef = useRef(null);
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:5000';
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const endReasoningSession = async (id) => {
+    if (!id) return;
+    try {
+      await fetch(`${apiBaseUrl}/reason/end`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: id }),
+      });
+    } catch {
+      // Intentionally ignore teardown errors.
+    }
   };
 
   useEffect(() => {
@@ -41,7 +57,29 @@ export default function ChatWindow({ model }) {
   }, [messages]);
 
   useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
+
+  useEffect(() => {
+    const previousSessionId = sessionIdRef.current;
+    if (previousSessionId) {
+      endReasoningSession(previousSessionId);
+    }
+    previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    previewUrlsRef.current = [];
+    setMessages(getInitialMessages());
+    setInput('');
+    setSelectedFile(null);
+    setSessionId(null);
+    setSessionImageFile(null);
+  }, [currentChatId]);
+
+  useEffect(() => {
     return () => {
+      const previousSessionId = sessionIdRef.current;
+      if (previousSessionId) {
+        endReasoningSession(previousSessionId);
+      }
       previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
       previewUrlsRef.current = [];
     };
@@ -51,42 +89,49 @@ export default function ChatWindow({ model }) {
     e.preventDefault();
 
     if (!input.trim()) return;
-    if (!selectedFile) {
+    if (!sessionId && !selectedFile) {
       setMessages(prev => [
         ...prev,
         {
           id: createMessageId(),
           type: 'bot',
-          content: 'Please upload an image before sending a prompt.',
+          content: 'Upload an image first to start reasoning.',
           timestamp: new Date(),
         },
       ]);
       return;
     }
 
-    const imagePreviewUrl = URL.createObjectURL(selectedFile);
-    previewUrlsRef.current.push(imagePreviewUrl);
+    const prompt = input.trim();
+    let imagePreviewUrl;
+    if (!sessionId && selectedFile) {
+      imagePreviewUrl = URL.createObjectURL(selectedFile);
+      previewUrlsRef.current.push(imagePreviewUrl);
+    }
 
     const userMessage = {
       id: createMessageId(),
       type: 'user',
-      content: input,
+      content: prompt,
       imageUrl: imagePreviewUrl,
       timestamp: new Date(),
     };
 
     setMessages(prev => [...prev, userMessage]);
-    const prompt = input;
     setInput('');
     setLoading(true);
 
     try {
       const formData = new FormData();
-      formData.append('image', selectedFile);
       formData.append('prompt', prompt);
       formData.append('model', resolveOllamaModel(model));
+      if (sessionId) {
+        formData.append('session_id', sessionId);
+      } else if (selectedFile) {
+        formData.append('image', selectedFile);
+      }
 
-      const response = await fetch(`${apiBaseUrl}/describe`, {
+      const response = await fetch(`${apiBaseUrl}/reason`, {
         method: 'POST',
         body: formData,
       });
@@ -103,7 +148,11 @@ export default function ChatWindow({ model }) {
         timestamp: new Date(),
       };
       setMessages(prev => [...prev, botMessage]);
-      setSelectedFile(null);
+      if (!sessionId && data.session_id) {
+        setSessionId(data.session_id);
+        setSessionImageFile(selectedFile);
+        setSelectedFile(null);
+      }
     } catch (error) {
       const errorMessage = {
         id: createMessageId(),
@@ -157,7 +206,7 @@ export default function ChatWindow({ model }) {
               accept="image/*"
               onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
               className="text-sm text-light file:mr-3 file:px-3 file:py-2 file:rounded-lg file:border-0 file:bg-surface-light file:text-light"
-              disabled={loading}
+              disabled={loading || !!sessionId}
             />
             <input
               type="text"
@@ -169,12 +218,17 @@ export default function ChatWindow({ model }) {
             />
             <button
               type="submit"
-              disabled={loading || !input.trim() || !selectedFile}
+              disabled={loading || !input.trim() || (!sessionId && !selectedFile)}
               className="p-3 bg-surface-light text-light rounded-lg hover:bg-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Send size={20} />
             </button>
           </div>
+          {sessionId && sessionImageFile && (
+            <p className="mt-2 text-xs text-text-secondary">
+              Reasoning session active on image: {sessionImageFile.name}
+            </p>
+          )}
           {selectedFile && (
             <p className="mt-2 text-xs text-text-secondary">
               Ready: {selectedFile.name}
