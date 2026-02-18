@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Send } from 'lucide-react';
 import Message from './Message';
+import { useExtraction } from '../hooks/useExtraction';
 
 const getInitialMessages = () => [
   {
@@ -24,6 +25,7 @@ const resolveOllamaModel = (uiModel) => {
 };
 
 export default function ChatWindow({ model, currentChatId }) {
+  const { addExtraction } = useExtraction();
   const [messages, setMessages] = useState(getInitialMessages());
   const [input, setInput] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
@@ -39,7 +41,7 @@ export default function ChatWindow({ model, currentChatId }) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const endReasoningSession = async (id) => {
+  const endReasoningSession = useCallback(async (id) => {
     if (!id) return;
     try {
       await fetch(`${apiBaseUrl}/reason/end`, {
@@ -50,7 +52,7 @@ export default function ChatWindow({ model, currentChatId }) {
     } catch {
       // Intentionally ignore teardown errors.
     }
-  };
+  }, [apiBaseUrl]);
 
   useEffect(() => {
     scrollToBottom();
@@ -72,7 +74,7 @@ export default function ChatWindow({ model, currentChatId }) {
     setSelectedFile(null);
     setSessionId(null);
     setSessionImageFile(null);
-  }, [currentChatId]);
+  }, [currentChatId, endReasoningSession]);
 
   useEffect(() => {
     return () => {
@@ -83,7 +85,7 @@ export default function ChatWindow({ model, currentChatId }) {
       previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
       previewUrlsRef.current = [];
     };
-  }, []);
+  }, [endReasoningSession]);
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
@@ -148,6 +150,9 @@ export default function ChatWindow({ model, currentChatId }) {
         timestamp: new Date(),
       };
       setMessages(prev => [...prev, botMessage]);
+      if (data.extraction) {
+        addExtraction(data.extraction);
+      }
       if (!sessionId && data.session_id) {
         setSessionId(data.session_id);
         setSessionImageFile(selectedFile);
