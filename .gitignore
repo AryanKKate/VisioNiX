@@ -1,3 +1,13 @@
+backend/.venv/
+backend/logs/*
+!backend/logs/.gitkeep
+backend/uploads/*
+!backend/uploads/.gitkeep
+backend/embeddings/*
+!backend/embeddings/.gitkeep
+
+
+
 # Python
 __pycache__/
 *.py[cod]
