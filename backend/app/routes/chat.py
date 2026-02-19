@@ -175,33 +175,58 @@ def send_message(room_id: str):
             return jsonify({"error": "chat room not found"}), 404
 
         image_file = request.files.get("image")
-        image_b64 = None
-        image_name = None
-        image_mime_type = None
+        image_b64_for_reasoning = None
+        image_name_for_reasoning = None
+        image_mime_type_for_reasoning = None
+        image_b64_for_message = None
+        image_name_for_message = None
+        image_mime_type_for_message = None
 
         if image_file and image_file.filename:
-            image_name = image_file.filename
-            image_mime_type = image_file.mimetype or "application/octet-stream"
+            image_name_for_reasoning = image_file.filename
+            image_mime_type_for_reasoning = image_file.mimetype or "application/octet-stream"
             image_bytes = image_file.read()
-            image_b64 = base64.b64encode(image_bytes).decode("ascii")
+            image_b64_for_reasoning = base64.b64encode(image_bytes).decode("ascii")
+            image_name_for_message = image_name_for_reasoning
+            image_mime_type_for_message = image_mime_type_for_reasoning
+            image_b64_for_message = image_b64_for_reasoning
+        else:
+            # Reuse the most recent uploaded image in this room for follow-up queries.
+            recent_messages = (
+                supabase.table("chat_messages")
+                .select("image_name,image_mime_type,image_data,created_at")
+                .eq("room_id", room_id)
+                .eq("role", "user")
+                .order("created_at", desc=True)
+                .limit(50)
+                .execute()
+            )
+            for msg in recent_messages.data or []:
+                if msg.get("image_data"):
+                    image_b64_for_reasoning = msg.get("image_data")
+                    image_name_for_reasoning = msg.get("image_name") or "previous_image"
+                    image_mime_type_for_reasoning = msg.get("image_mime_type") or "application/octet-stream"
+                    break
 
         user_message_payload = {
             "room_id": room_id,
             "role": "user",
             "content": prompt,
-            "image_name": image_name,
-            "image_mime_type": image_mime_type,
-            "image_data": image_b64,
+            "image_name": image_name_for_message,
+            "image_mime_type": image_mime_type_for_message,
+            "image_data": image_b64_for_message,
         }
         user_message_result = supabase.table("chat_messages").insert(user_message_payload).execute()
         user_message = user_message_result.data[0] if user_message_result.data else None
 
         image_path = None
-        if image_file and image_file.filename:
+        if image_b64_for_reasoning:
             os.makedirs("uploads/chat_images", exist_ok=True)
-            image_path = os.path.join("uploads/chat_images", f"{uuid.uuid4()}_{image_name}")
+            image_path = os.path.join("uploads/chat_images", f"{uuid.uuid4()}_{image_name_for_reasoning}")
             with open(image_path, "wb") as out:
-                out.write(base64.b64decode(image_b64))
+                out.write(base64.b64decode(image_b64_for_reasoning))
+        else:
+            return jsonify({"error": "Please upload an image to start this chat."}), 400
 
         try:
             assistant_text = generate_with_ollama(
