@@ -1,6 +1,6 @@
 import { useAuth } from '../hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useExtraction } from '../hooks/useExtraction';
 import { ArrowLeft } from 'lucide-react';
 import ExtractionCard from '../components/ExtractionCard';
@@ -9,7 +9,17 @@ import ExtractionDetails from '../components/ExtractionDetails';
 export default function ExtractionPage() {
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
-  const { extractions, selectedExtraction, getCurrentExtraction, deleteExtraction, setSelectedExtraction } = useExtraction();
+  const [deleteError, setDeleteError] = useState('');
+  const {
+    extractions,
+    selectedExtraction,
+    loading,
+    error,
+    getCurrentExtraction,
+    refreshExtractions,
+    deleteExtraction,
+    setSelectedExtraction,
+  } = useExtraction();
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -18,6 +28,16 @@ export default function ExtractionPage() {
   }, [isAuthenticated, navigate]);
 
   const currentExtraction = getCurrentExtraction();
+  const displayError = deleteError || error;
+
+  const handleDeleteExtraction = async (id) => {
+    try {
+      setDeleteError('');
+      await deleteExtraction(id);
+    } catch (err) {
+      setDeleteError(err.message || 'Failed to delete extraction');
+    }
+  };
 
   return (
     <div className="min-h-screen bg-primary">
@@ -37,7 +57,23 @@ export default function ExtractionPage() {
 
       {/* Content */}
       <div className="max-w-7xl mx-auto px-6 py-8">
-        {extractions.length === 0 ? (
+        {loading ? (
+          <div className="bg-secondary rounded-lg border border-border p-12 text-center">
+            <h2 className="text-xl font-semibold text-light mb-2">Loading Extractions...</h2>
+            <p className="text-text-secondary">Fetching latest extraction results from backend.</p>
+          </div>
+        ) : displayError ? (
+          <div className="bg-secondary rounded-lg border border-border p-12 text-center">
+            <h2 className="text-xl font-semibold text-light mb-2">Could not load extractions</h2>
+            <p className="text-text-secondary mb-4">{displayError}</p>
+            <button
+              onClick={refreshExtractions}
+              className="inline-flex items-center gap-2 px-6 py-2 bg-surface-light text-light rounded-lg hover:bg-hover transition-colors font-medium"
+            >
+              Retry
+            </button>
+          </div>
+        ) : extractions.length === 0 ? (
           <div className="bg-secondary rounded-lg border border-border p-12 text-center">
             <h2 className="text-xl font-semibold text-light mb-2">No Extractions Yet</h2>
             <p className="text-text-secondary mb-4">
@@ -64,7 +100,7 @@ export default function ExtractionPage() {
                       extraction={extraction}
                       isSelected={selectedExtraction === extraction.id}
                       onSelect={() => setSelectedExtraction(extraction.id)}
-                      onDelete={deleteExtraction}
+                      onDelete={handleDeleteExtraction}
                     />
                   ))}
                 </div>

@@ -1,11 +1,20 @@
-import numpy as np
-from PIL import Image
-from app.models import yolo_model, blip_processor, blip_model, clip_processor, clip_model, ocr_model, classify_scene
-from doctr.io import DocumentFile
-import torch
 import os
+from datetime import datetime, timezone
+
 import numpy as np
-from datetime import datetime
+import torch
+from doctr.io import DocumentFile
+from PIL import Image
+
+from app.models import (
+    blip_model,
+    blip_processor,
+    classify_scene,
+    clip_model,
+    clip_processor,
+    ocr_model,
+    yolo_model,
+)
 
 EMBEDDINGS_DIR = "embeddings"
 os.makedirs(EMBEDDINGS_DIR, exist_ok=True)
@@ -84,6 +93,7 @@ def extract_features(image_path):
         "texture_features": texture,
         "clip_embedding_file": embedding_filename,
         "clip_embedding_path": embedding_path,
+        "extracted_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "embed": clip_vector.tolist()
     }
 

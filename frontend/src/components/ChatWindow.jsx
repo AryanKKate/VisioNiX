@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Send } from 'lucide-react';
 import Message from './Message';
+import { useExtraction } from '../hooks/useExtraction';
 
 const getWelcomeMessage = () => ({
   id: 'bot-welcome',
@@ -22,8 +23,7 @@ const resolveOllamaModel = (uiModel) => {
 };
 
 export default function ChatWindow({ model, currentChatId }) {
-  const token = localStorage.getItem('token');
-  const [messages, setMessages] = useState([getWelcomeMessage()]);
+  const [messages, setMessages] = useState(getInitialMessages());
   const [input, setInput] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -36,18 +36,18 @@ export default function ChatWindow({ model, currentChatId }) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const mapServerMessage = useCallback((message) => {
-    const role = message?.role === 'user' ? 'user' : 'bot';
-    const mime = message?.image_mime_type || 'image/jpeg';
-    const imageUrl = message?.image_data ? `data:${mime};base64,${message.image_data}` : undefined;
-    return {
-      id: message?.id || createMessageId(),
-      type: role,
-      content: message?.content || '',
-      imageUrl,
-      timestamp: message?.created_at ? new Date(message.created_at) : new Date(),
-    };
-  }, []);
+  const endReasoningSession = async (id) => {
+    if (!id) return;
+    try {
+      await fetch(`${apiBaseUrl}/reason/end`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: id }),
+      });
+    } catch {
+      // Intentionally ignore teardown errors.
+    }
+  };
 
   useEffect(() => {
     scrollToBottom();
@@ -59,42 +59,19 @@ export default function ChatWindow({ model, currentChatId }) {
     setMessages([getWelcomeMessage()]);
     setInput('');
     setSelectedFile(null);
+    setSessionId(null);
+    setSessionImageFile(null);
   }, [currentChatId]);
 
-  const loadMessages = useCallback(async () => {
-    if (!token || !currentChatId) {
-      setMessages([getWelcomeMessage()]);
-      return;
-    }
-    try {
-      const response = await fetch(`${apiBaseUrl}/chat/rooms/${currentChatId}/messages`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to load messages');
-      }
-      const rows = data.messages || [];
-      if (rows.length === 0) {
-        setMessages([getWelcomeMessage()]);
-      } else {
-        setMessages(rows.map(mapServerMessage));
-      }
-    } catch (err) {
-      setError(err.message || 'Failed to load messages');
-      setMessages([getWelcomeMessage()]);
-    }
-  }, [apiBaseUrl, currentChatId, mapServerMessage, token]);
-
   useEffect(() => {
-    loadMessages();
-  }, [loadMessages]);
-
-  useEffect(() => () => {
-    previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
-    previewUrlsRef.current = [];
+    return () => {
+      const previousSessionId = sessionIdRef.current;
+      if (previousSessionId) {
+        endReasoningSession(previousSessionId);
+      }
+      previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      previewUrlsRef.current = [];
+    };
   }, []);
 
   const handleSendMessage = async (e) => {
@@ -150,13 +127,19 @@ export default function ChatWindow({ model, currentChatId }) {
         throw new Error(data.error || 'Failed to send message');
       }
 
-      const assistantMessage = data.assistant_message ? mapServerMessage(data.assistant_message) : null;
-      setMessages((prev) => [
-        ...prev,
-        ...(assistantMessage ? [assistantMessage] : []),
-      ]);
-      setSelectedFile(null);
-    } catch (err) {
+      const botMessage = {
+        id: createMessageId(),
+        type: 'bot',
+        content: data.llm_response || `Analysis completed with ${data.model || model}.`,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, botMessage]);
+      if (!sessionId && data.session_id) {
+        setSessionId(data.session_id);
+        setSessionImageFile(selectedFile);
+        setSelectedFile(null);
+      }
+    } catch (error) {
       const errorMessage = {
         id: createMessageId(),
         type: 'bot',

@@ -8,6 +8,7 @@ from flask import Blueprint, jsonify, request
 from werkzeug.utils import secure_filename
 
 from app.services.feature_extractor import extract_features
+from app.services.extraction_store import add_extraction_record
 from app.services.ollama_service import generate_with_ollama, check_ollama_health
 
 llm_bp = Blueprint("llm", __name__)
@@ -69,6 +70,12 @@ def describe_image():
     file.save(path)
 
     features = extract_features(path)
+    extraction_record = add_extraction_record(
+        features=features,
+        image_name=filename,
+        image_path=path,
+        source="describe",
+    )
 
     try:
         llm_text = generate_with_ollama(
@@ -96,6 +103,7 @@ def describe_image():
                 "details": str(exc),
                 "model": model or os.getenv("OLLAMA_MODEL", "qwen3-vl:8b"),
                 "features": features,
+                "extraction_id": extraction_record["id"],
                 "request_id": request_id,
                 "timing_ms": elapsed_ms,
             }
@@ -120,6 +128,7 @@ def describe_image():
         {
             "model": model or os.getenv("OLLAMA_MODEL", "qwen3-vl:8b"),
             "features": features,
+            "extraction_id": extraction_record["id"],
             "llm_response": llm_text,
             "request_id": request_id,
             "timing_ms": elapsed_ms,
@@ -141,6 +150,7 @@ def reason_over_image():
 
     session: dict[str, Any] | None = None
     created_new_session = False
+    extraction_record: dict[str, Any] | None = None
 
     if session_id:
         session = _REASONING_SESSIONS.get(session_id)
@@ -171,12 +181,19 @@ def reason_over_image():
         file.save(image_path)
 
         features = extract_features(image_path)
+        extraction_record = add_extraction_record(
+            features=features,
+            image_name=original_filename,
+            image_path=image_path,
+            source="reason",
+        )
         session_id = str(uuid.uuid4())
         session = {
             "session_id": session_id,
             "image_name": original_filename,
             "image_path": image_path,
             "features": features,
+            "extraction_id": extraction_record["id"],
             "history": [],
             "created_at": time.time(),
             "updated_at": time.time(),
@@ -264,6 +281,8 @@ def reason_over_image():
             "session_id": session_id,
             "model": active_model,
             "llm_response": llm_text,
+            "extraction_id": session.get("extraction_id"),
+            "extraction": extraction_record if created_new_session else None,
             "turn_index": turn_index,
             "created_new_session": created_new_session,
             "timing_ms": elapsed_ms,
