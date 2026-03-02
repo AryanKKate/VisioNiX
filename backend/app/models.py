@@ -86,4 +86,39 @@ def classify_scene(image_path):
     except Exception as e:
         return [f"Scene classification failed: {e}"]
 
+# ---------------- CLIP SEVERITY PREDICTION ---------------- #
 
+severity_prompts = [
+    "a medical chest radiograph with small localized lung opacity indicating mild pneumonia",
+    "a chest x-ray with visible patchy opacities in one lung indicating moderate pneumonia",
+    "a chest x-ray with extensive bilateral lung consolidation indicating severe pneumonia"
+]
+
+def predict_severity(image_path):
+    try:
+        image = Image.open(image_path).convert("RGB")
+
+        inputs = clip_processor(
+            text=severity_prompts,
+            images=image,
+            return_tensors="pt",
+            padding=True
+        ).to(device)
+
+        with torch.no_grad():
+            outputs = clip_model(**inputs)
+
+        logits_per_image = outputs.logits_per_image
+        probs = logits_per_image.softmax(dim=1)
+
+        predicted_index = probs.argmax().item()
+        predicted_label = severity_prompts[predicted_index]
+        confidence = probs[0][predicted_index].item()
+
+        return {
+            "severity": predicted_label,
+            "confidence": round(confidence, 4)
+        }
+
+    except Exception as e:
+        return {"error": f"CLIP severity prediction failed: {e}"}
