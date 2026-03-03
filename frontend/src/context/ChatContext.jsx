@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { createContext, useState, useCallback } from 'react';
 
 export const ChatContext = createContext();
@@ -7,7 +8,7 @@ export function ChatProvider({ children }) {
     {
       id: '1',
       title: 'Sample Chat 1',
-      timestamp: new Date(Date.now() - 3600000),
+      timestamp: new Date('2024-01-01T00:00:00.000Z'),
       messages: [
         { id: '1', role: 'user', content: 'Hello, can you help me?' },
         { id: '2', role: 'assistant', content: 'Of course! I\'m here to help.' }
@@ -58,7 +59,7 @@ export function ChatProvider({ children }) {
   const deleteChat = useCallback((chatId) => {
     setChats(prev => prev.filter(chat => chat.id !== chatId));
     if (currentChatId === chatId) {
-      setCurrentChatId(prev => {
+      setCurrentChatId(() => {
         const remaining = chats.filter(c => c.id !== chatId);
         return remaining.length > 0 ? remaining[0].id : null;
       });

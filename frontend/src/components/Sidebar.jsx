@@ -1,6 +1,6 @@
 import { Plus, MessageSquare, Trash2, Search } from 'lucide-react';
 
-export default function Sidebar({ chats, deleteChat, onNewChat, onLogout }) {
+export default function Sidebar({ chats, deleteChat, onNewChat }) {
   return (
     <div className="w-64 bg-white border-r border-gray-200 flex flex-col h-screen">
       {/* New Chat Button */}
