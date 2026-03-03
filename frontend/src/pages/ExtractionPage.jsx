@@ -1,25 +1,40 @@
 import { useAuth } from '../hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
-import { useExtraction } from '../hooks/useExtraction';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import ExtractionCard from '../components/ExtractionCard';
 import ExtractionDetails from '../components/ExtractionDetails';
 
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:5000';
+
+const normalizeTextList = (value) => (Array.isArray(value) ? value : []);
+const normalizeNumericList = (value) =>
+  Array.isArray(value)
+    ? value.map((entry) => Number(entry)).filter((entry) => Number.isFinite(entry))
+    : [];
+
+const normalizeExtraction = (data = {}) => ({
+  id: String(data.id || ''),
+  image_name: data.image_name || 'Unknown image',
+  caption: data.caption || '',
+  objects: normalizeTextList(data.objects),
+  ocr_text: data.ocr_text || '',
+  scene_labels: normalizeTextList(data.scene_labels),
+  color_features: normalizeNumericList(data.color_features),
+  texture_features: normalizeNumericList(data.texture_features),
+  clip_embedding_file: data.clip_embedding_file || '',
+  clip_embedding_path: data.clip_embedding_path || '',
+  timestamp: data.timestamp || data.extracted_at || new Date().toISOString(),
+});
+
 export default function ExtractionPage() {
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
-  const [deleteError, setDeleteError] = useState('');
-  const {
-    extractions,
-    selectedExtraction,
-    loading,
-    error,
-    getCurrentExtraction,
-    refreshExtractions,
-    deleteExtraction,
-    setSelectedExtraction,
-  } = useExtraction();
+  const [extractions, setExtractions] = useState([]);
+  const [selectedExtractionId, setSelectedExtractionId] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [deletingId, setDeletingId] = useState('');
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -27,17 +42,69 @@ export default function ExtractionPage() {
     }
   }, [isAuthenticated, navigate]);
 
-  const currentExtraction = getCurrentExtraction();
-  const displayError = deleteError || error;
-
-  const handleDeleteExtraction = async (id) => {
+  const loadExtractions = useCallback(async () => {
+    setLoading(true);
+    setError('');
     try {
-      setDeleteError('');
-      await deleteExtraction(id);
+      const response = await fetch(`${apiBaseUrl}/extractions`);
+      const payload = await response.json().catch(() => []);
+      if (!response.ok) {
+        throw new Error(payload?.error || `Failed to load extractions from ${apiBaseUrl}`);
+      }
+
+      const items = Array.isArray(payload) ? payload.map(normalizeExtraction) : [];
+      setExtractions(items);
+      setSelectedExtractionId((prev) => {
+        if (items.length === 0) return '';
+        if (prev && items.some((item) => item.id === prev)) return prev;
+        return items[0].id;
+      });
     } catch (err) {
-      setDeleteError(err.message || 'Failed to delete extraction');
+      setError(err.message || `Failed to load extractions from ${apiBaseUrl}`);
+    } finally {
+      setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadExtractions();
+    }
+  }, [isAuthenticated, loadExtractions]);
+
+  const handleDeleteExtraction = useCallback(async (id) => {
+    try {
+      setDeletingId(id);
+      setError('');
+      const response = await fetch(`${apiBaseUrl}/extractions/${id}`, {
+        method: 'DELETE',
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Failed to delete extraction');
+      }
+
+      setExtractions((prev) => {
+        const updated = prev.filter((item) => item.id !== id);
+        setSelectedExtractionId((current) => {
+          if (current && current !== id && updated.some((item) => item.id === current)) {
+            return current;
+          }
+          return updated.length > 0 ? updated[0].id : '';
+        });
+        return updated;
+      });
+    } catch (err) {
+      setError(err.message || 'Failed to delete extraction');
+    } finally {
+      setDeletingId('');
+    }
+  }, []);
+
+  const currentExtraction = useMemo(
+    () => extractions.find((item) => item.id === selectedExtractionId) || null,
+    [extractions, selectedExtractionId]
+  );
 
   return (
     <div className="min-h-screen bg-primary">
@@ -62,12 +129,12 @@ export default function ExtractionPage() {
             <h2 className="text-xl font-semibold text-light mb-2">Loading Extractions...</h2>
             <p className="text-text-secondary">Fetching latest extraction results from backend.</p>
           </div>
-        ) : displayError ? (
+        ) : error ? (
           <div className="bg-secondary rounded-lg border border-border p-12 text-center">
             <h2 className="text-xl font-semibold text-light mb-2">Could not load extractions</h2>
-            <p className="text-text-secondary mb-4">{displayError}</p>
+            <p className="text-text-secondary mb-4">{error}</p>
             <button
-              onClick={refreshExtractions}
+              onClick={loadExtractions}
               className="inline-flex items-center gap-2 px-6 py-2 bg-surface-light text-light rounded-lg hover:bg-hover transition-colors font-medium"
             >
               Retry
@@ -98,12 +165,17 @@ export default function ExtractionPage() {
                     <ExtractionCard
                       key={extraction.id}
                       extraction={extraction}
-                      isSelected={selectedExtraction === extraction.id}
-                      onSelect={() => setSelectedExtraction(extraction.id)}
+                      isSelected={selectedExtractionId === extraction.id}
+                      onSelect={() => setSelectedExtractionId(extraction.id)}
                       onDelete={handleDeleteExtraction}
                     />
                   ))}
                 </div>
+                {deletingId && (
+                  <p className="text-xs text-text-secondary mt-3">
+                    Deleting extraction...
+                  </p>
+                )}
               </div>
             </div>
 

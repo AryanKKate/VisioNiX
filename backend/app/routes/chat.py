@@ -1,4 +1,5 @@
 import base64
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
@@ -6,11 +7,14 @@ from datetime import datetime, timezone
 from flask import Blueprint, jsonify, request
 from supabase import AuthApiError
 
+from app.services.extraction_store import add_extraction_record
+from app.services.feature_extractor import extract_features
 from app.services.ollama_service import generate_with_ollama
 from app.services.supabase_client import get_supabase_client
 
 
 chat_bp = Blueprint("chat", __name__, url_prefix="/chat")
+logger = logging.getLogger(__name__)
 
 
 def _extract_bearer_token(auth_header: str):
@@ -228,6 +232,20 @@ def send_message(room_id: str):
         else:
             return jsonify({"error": "Please upload an image to start this chat."}), 400
 
+        extraction_record = None
+        if image_file and image_file.filename:
+            try:
+                features = extract_features(image_path)
+                extraction_record = add_extraction_record(
+                    features=features,
+                    image_name=image_name_for_reasoning or image_file.filename,
+                    image_path=image_path,
+                    source="chat",
+                )
+            except Exception as exc:
+                # Keep chat responsive even if feature extraction fails.
+                logger.warning("chat image extraction failed: %s", exc)
+
         try:
             assistant_text = generate_with_ollama(
                 features={},
@@ -266,6 +284,8 @@ def send_message(room_id: str):
             {
                 "user_message": user_message,
                 "assistant_message": assistant_message,
+                "extraction_id": extraction_record["id"] if extraction_record else None,
+                "extraction": extraction_record,
             }
         ), 201
     except Exception as exc:

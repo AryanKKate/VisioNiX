@@ -30,7 +30,6 @@ export default function ExtractionCard({ extraction, isSelected, onSelect, onDel
 
       <p className="text-sm text-text-secondary line-clamp-2 mb-3">{extraction.caption}</p>
 
-      {/* Objects */}
       {extraction.objects && extraction.objects.length > 0 && (
         <div className="mb-3">
           <p className="text-xs font-semibold text-text-secondary mb-1">Detected Objects:</p>
@@ -49,11 +48,9 @@ export default function ExtractionCard({ extraction, isSelected, onSelect, onDel
 
       <div className="flex items-center justify-between pt-3 border-t border-border">
         <div className="text-xs text-text-secondary">
-          {extraction.objects?.length || 0} objects • {extraction.ocr_text?.length > 0 ? 'OCR' : 'No OCR'}
+          {extraction.objects?.length || 0} objects | {extraction.ocr_text?.length > 0 ? 'OCR' : 'No OCR'}
         </div>
-        {isSelected && (
-          <Eye size={16} className="text-text-secondary" />
-        )}
+        {isSelected && <Eye size={16} className="text-text-secondary" />}
       </div>
     </div>
   );
