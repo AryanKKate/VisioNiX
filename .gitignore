@@ -12,6 +12,9 @@ backend/embeddings/*
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyc
+*.pt
+*.pth
 
 # Virtual Environment
 venv/
@@ -56,3 +59,12 @@ embeddings/*
 # But keep the folders themselves
 !uploads/.gitkeep
 !embeddings/.gitkeep
+
+
+# Ignore model weights
+backend/models/*.pth
+backend/models/*.pt
+backend/models/*.tar
+
+backend/data/
+backend/outputs/
