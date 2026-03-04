@@ -8,7 +8,6 @@ from supabase import AuthApiError
 from werkzeug.utils import secure_filename
 
 from app.services.extraction_store import add_extraction_record
-from app.services.feature_extractor import extract_features
 from app.services.ollama_service import generate_with_ollama
 from app.services.supabase_client import get_supabase_client
 
@@ -238,6 +237,7 @@ def send_message(room_id: str):
         extraction_record = None
         extraction_error = None
         if uploaded_image and image_path:
+            from app.services.feature_extractor import extract_features
             try:
                 extracted_features = extract_features(image_path)
                 extraction_record = add_extraction_record(
@@ -294,3 +294,4 @@ def send_message(room_id: str):
         ), 201
     except Exception as exc:
         return jsonify({"error": f"failed to send message: {exc}"}), 500
+
