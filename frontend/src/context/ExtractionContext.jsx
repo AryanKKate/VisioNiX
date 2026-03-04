@@ -4,6 +4,7 @@ import { createContext, useCallback, useEffect, useState } from 'react';
 export const ExtractionContext = createContext();
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:5000';
+const extractionPathPrefixes = ['', '/features', '/api'];
 
 const normalizeTextList = (value) => (Array.isArray(value) ? value : []);
 const normalizeNumericList = (value) =>
@@ -26,11 +27,18 @@ const normalizeExtraction = (data = {}) => ({
   source: data.source || 'unknown',
 });
 
+const parseExtractionsPayload = (payload) => {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.extractions)) return payload.extractions;
+  return [];
+};
+
 export function ExtractionProvider({ children }) {
   const [extractions, setExtractions] = useState([]);
   const [selectedExtraction, setSelectedExtraction] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [activePathPrefix, setActivePathPrefix] = useState('');
 
   const getCurrentExtraction = useCallback(() => {
     return extractions.find(e => e.id === selectedExtraction);
@@ -41,15 +49,51 @@ export function ExtractionProvider({ children }) {
     setError('');
 
     try {
-      const response = await fetch(`${apiBaseUrl}/extractions`);
-      const payload = await response.json().catch(() => []);
-      if (!response.ok) {
-        throw new Error(payload?.error || 'Failed to load extractions');
+      let lastError = null;
+      let payload = [];
+      let didLoad = false;
+      let firstSuccessfulPrefix = '';
+      let firstSuccessfulPayload = [];
+
+      for (const prefix of extractionPathPrefixes) {
+        try {
+          const response = await fetch(`${apiBaseUrl}${prefix}/extractions`);
+          const parsedPayload = await response.json().catch(() => []);
+
+          if (!response.ok) {
+            const message = parsedPayload?.error || `Failed to load extractions (${response.status})`;
+            if (response.status === 404) {
+              lastError = new Error(message);
+              continue;
+            }
+            throw new Error(message);
+          }
+
+          const parsedRows = parseExtractionsPayload(parsedPayload);
+          if (!didLoad) {
+            firstSuccessfulPrefix = prefix;
+            firstSuccessfulPayload = parsedRows;
+            didLoad = true;
+          }
+          if (parsedRows.length > 0) {
+            payload = parsedRows;
+            setActivePathPrefix(prefix);
+            break;
+          }
+        } catch (innerErr) {
+          lastError = innerErr;
+        }
       }
 
-      const normalized = Array.isArray(payload)
-        ? payload.map(normalizeExtraction)
-        : [];
+      if (!didLoad) {
+        throw lastError || new Error('Failed to load extractions');
+      }
+      if (payload.length === 0) {
+        payload = firstSuccessfulPayload;
+        setActivePathPrefix(firstSuccessfulPrefix);
+      }
+
+      const normalized = payload.map(normalizeExtraction);
 
       setExtractions(normalized);
       setSelectedExtraction(prevSelected => {
@@ -78,9 +122,31 @@ export function ExtractionProvider({ children }) {
   }, []);
 
   const deleteExtraction = useCallback(async (id) => {
-    const response = await fetch(`${apiBaseUrl}/extractions/${id}`, {
-      method: 'DELETE',
-    });
+    const prefixesToTry = [activePathPrefix, ...extractionPathPrefixes.filter(prefix => prefix !== activePathPrefix)];
+    let response = null;
+    let lastError = null;
+
+    for (const prefix of prefixesToTry) {
+      try {
+        response = await fetch(`${apiBaseUrl}${prefix}/extractions/${id}`, {
+          method: 'DELETE',
+        });
+
+        if (response.status === 404) {
+          lastError = new Error('Extraction not found');
+          continue;
+        }
+
+        setActivePathPrefix(prefix);
+        break;
+      } catch (err) {
+        lastError = err;
+      }
+    }
+
+    if (!response) {
+      throw lastError || new Error('Failed to delete extraction');
+    }
 
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
@@ -97,7 +163,7 @@ export function ExtractionProvider({ children }) {
       });
       return updated;
     });
-  }, []);
+  }, [activePathPrefix]);
 
   return (
     <ExtractionContext.Provider value={{

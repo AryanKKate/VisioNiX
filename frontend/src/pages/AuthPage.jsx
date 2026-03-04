@@ -18,27 +18,28 @@ export default function AuthPage() {
     e.preventDefault();
     setError('');
     setLoading(true);
+    const normalizedEmail = email.trim().toLowerCase();
 
     try {
       if (isLogin) {
-        if (!email || !password) {
+        if (!normalizedEmail || !password) {
           setError('Please fill in all fields');
           setLoading(false);
           return;
         }
-        const result = await login(email, password);
+        const result = await login(normalizedEmail, password);
         if (!result.success) {
           setError(result.error || 'Unable to sign in');
           return;
         }
         navigate('/chat');
       } else {
-        if (!name || !email || !password) {
+        if (!name || !normalizedEmail || !password) {
           setError('Please fill in all fields');
           setLoading(false);
           return;
         }
-        const result = await signup(email, password, name);
+        const result = await signup(normalizedEmail, password, name);
         if (!result.success) {
           setError(result.error || 'Unable to sign up');
           return;
