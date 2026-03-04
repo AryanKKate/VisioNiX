@@ -4,6 +4,7 @@ import { createContext, useEffect, useState, useCallback } from 'react';
 export const AuthContext = createContext();
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:5000';
+const isJwt = (value) => typeof value === 'string' && value.split('.').length === 3;
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -13,6 +14,12 @@ export function AuthProvider({ children }) {
   const hydrateSession = useCallback(async () => {
     const token = localStorage.getItem('token');
     if (!token) {
+      return;
+    }
+    if (!isJwt(token)) {
+      localStorage.removeItem('token');
+      setUser(null);
+      setIsAuthenticated(false);
       return;
     }
 

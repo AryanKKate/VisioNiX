@@ -1,4 +1,6 @@
 import os
+import base64
+import requests
 from datetime import datetime, timezone
 
 import numpy as np
@@ -19,25 +21,29 @@ from app.models import (
 EMBEDDINGS_DIR = "embeddings"
 os.makedirs(EMBEDDINGS_DIR, exist_ok=True)
 
-
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
+
+# ==============================
+# EXISTING LOCAL EXTRACTION
+# ==============================
 def extract_features(image_path):
+    print("🎶🎶🎶 Local")
     image = Image.open(image_path).convert("RGB")
 
-    # ---------- BLIP Caption ----------
+    # BLIP Caption
     inputs = blip_processor(image, return_tensors="pt").to(device)
     out = blip_model.generate(**inputs)
     caption = blip_processor.decode(out[0], skip_special_tokens=True)
 
-    # ---------- YOLO Objects ----------
+    # YOLO Objects
     results = yolo_model(image)
     objects = [
         yolo_model.names[int(box.cls)]
         for box in results[0].boxes
     ]
 
-    # ---------- OCR ----------
+    # OCR
     doc = DocumentFile.from_images(image_path)
     result = ocr_model(doc)
 
@@ -47,18 +53,17 @@ def extract_features(image_path):
             for line in block.lines:
                 ocr_text += " ".join([word.value for word in line.words]) + " "
 
-    # ---------- Scene Classification ----------
+    # Scene
     scene = classify_scene(image_path)
 
-
-    # ---------- Color Features ----------
+    # Color
     img_array = np.array(image)
     mean_color = img_array.mean(axis=(0, 1)).tolist()
 
-    # ---------- Texture Features (simple example: variance) ----------
+    # Texture
     texture = img_array.var(axis=(0, 1)).tolist()
 
-    # ---------- CLIP Embedding ----------
+    # CLIP Embedding
     clip_inputs = clip_processor(images=image, return_tensors="pt")
     clip_inputs = {k: v.to(device) for k, v in clip_inputs.items()}
 
@@ -72,7 +77,139 @@ def extract_features(image_path):
     )
     clip_vector = clip_vector.detach().cpu().numpy().flatten()
 
-    # ---------- Save Embedding ----------
+    return _finalize_output(
+        image_path,
+        caption,
+        objects,
+        ocr_text,
+        scene,
+        mean_color,
+        texture,
+        clip_vector
+    )
+
+
+# ==============================
+# NEW: HF REMOTE EXTRACTION
+# ==============================
+from gradio_client import Client, handle_file
+
+def _extract_from_hf(image_path, model_url):
+
+    print("😊😊 Hugging Face")
+
+    try:
+        client = Client(model_url)
+
+        result = client.predict(
+            handle_file(image_path),
+            api_name="/predict"
+        )
+
+    except Exception as e:
+        raise Exception(f"HF Gradio Client Error: {str(e)}")
+
+    # ----------------------------------------
+    # HF RETURNS ONLY YOLO DETECTIONS
+    # ----------------------------------------
+    detections = result.get("detections", [])
+
+    # Extract class_ids
+    class_ids = [d["class_id"] for d in detections]
+
+    # Convert class_ids -> names using local YOLO model
+    objects = [yolo_model.names[int(cid)] for cid in class_ids]
+
+    # ----------------------------------------
+    # RUN ALL OTHER FEATURES LOCALLY
+    # ----------------------------------------
+    image = Image.open(image_path).convert("RGB")
+
+    # BLIP Caption
+    inputs = blip_processor(image, return_tensors="pt").to(device)
+    out = blip_model.generate(**inputs)
+    caption = blip_processor.decode(out[0], skip_special_tokens=True)
+
+    # OCR
+    doc = DocumentFile.from_images(image_path)
+    ocr_result = ocr_model(doc)
+
+    ocr_text = ""
+    for page in ocr_result.pages:
+        for block in page.blocks:
+            for line in block.lines:
+                ocr_text += " ".join([word.value for word in line.words]) + " "
+
+    # Scene
+    scene = classify_scene(image_path)
+
+    # Color
+    img_array = np.array(image)
+    mean_color = img_array.mean(axis=(0, 1)).tolist()
+
+    # Texture
+    texture = img_array.var(axis=(0, 1)).tolist()
+
+    # CLIP Embedding (LOCAL)
+    clip_inputs = clip_processor(images=image, return_tensors="pt")
+    clip_inputs = {k: v.to(device) for k, v in clip_inputs.items()}
+
+    with torch.no_grad():
+        clip_vector = clip_model.get_image_features(
+            pixel_values=clip_inputs["pixel_values"]
+        )
+
+    clip_vector = torch.nn.functional.normalize(
+        clip_vector, p=2, dim=-1
+    )
+    clip_vector = clip_vector.detach().cpu().numpy().flatten()
+
+    # ----------------------------------------
+    # FINAL OUTPUT
+    # ----------------------------------------
+    return _finalize_output(
+        image_path,
+        caption,
+        objects,
+        ocr_text,
+        scene,
+        mean_color,
+        texture,
+        clip_vector
+    )
+
+
+# ==============================
+# NEW: SMART ROUTER FUNCTION
+# ==============================
+def extract_features_with_model(image_path, model_id):
+    """
+    model -> DB model object
+    """
+
+    # LOCAL DEFAULT MODEL
+    print(model_id)
+    if model_id:
+        return  _extract_from_hf(image_path, model_id["hf_space_url"]) 
+
+    # HF MODEL
+    return extract_features(image_path)
+
+
+# ==============================
+# SHARED FINALIZER
+# ==============================
+def _finalize_output(
+    image_path,
+    caption,
+    objects,
+    ocr_text,
+    scene,
+    mean_color,
+    texture,
+    clip_vector
+):
+
     image_name = os.path.basename(image_path)
     base_name = os.path.splitext(image_name)[0]
 
@@ -82,7 +219,6 @@ def extract_features(image_path):
 
     np.save(embedding_path, clip_vector)
 
-    # ---------- Return JSON ----------
     return {
         "image_name": image_name,
         "caption": caption,
@@ -96,10 +232,3 @@ def extract_features(image_path):
         "extracted_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "embed": clip_vector.tolist()
     }
-
-
-
-
-
-
-

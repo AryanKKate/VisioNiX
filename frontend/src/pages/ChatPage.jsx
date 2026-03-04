@@ -6,6 +6,7 @@ import { useAuth } from '../hooks/useAuth';
 import ChatWindow from '../components/ChatWindow';
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:5000';
+const isJwt = (value) => typeof value === 'string' && value.split('.').length === 3;
 
 export default function ChatPage() {
   const { user, logout } = useAuth();
@@ -28,6 +29,12 @@ export default function ChatPage() {
     if (!token) {
       setChats([]);
       setCurrentChatId(null);
+      return;
+    }
+    if (!isJwt(token)) {
+      localStorage.removeItem('token');
+      logout();
+      navigate('/');
       return;
     }
 
@@ -54,7 +61,7 @@ export default function ChatPage() {
       setChats([]);
       setCurrentChatId(null);
     }
-  }, [token]);
+  }, [navigate, logout, token]);
 
   useEffect(() => {
     loadRooms();
@@ -66,7 +73,12 @@ export default function ChatPage() {
   };
 
   const handleNewChat = async () => {
-    if (!token) return;
+    if (!token || !isJwt(token)) {
+      localStorage.removeItem('token');
+      logout();
+      navigate('/');
+      return;
+    }
     try {
       const response = await fetch(`${apiBaseUrl}/chat/rooms`, {
         method: 'POST',
@@ -91,7 +103,12 @@ export default function ChatPage() {
   };
 
   const handleDeleteChat = async (id) => {
-    if (!token) return;
+    if (!token || !isJwt(token)) {
+      localStorage.removeItem('token');
+      logout();
+      navigate('/');
+      return;
+    }
     try {
       const response = await fetch(`${apiBaseUrl}/chat/rooms/${id}`, {
         method: 'DELETE',

@@ -5,7 +5,10 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request
 from supabase import AuthApiError
+from werkzeug.utils import secure_filename
 
+from app.services.extraction_store import add_extraction_record
+from app.services.feature_extractor import extract_features
 from app.services.ollama_service import generate_with_ollama
 from app.services.supabase_client import get_supabase_client
 
@@ -28,6 +31,8 @@ def _get_user_from_request():
     token = _extract_bearer_token(request.headers.get("Authorization", ""))
     if not token:
         return None, (jsonify({"error": "Bearer token is required"}), 401)
+    if not isinstance(token, str) or token.count(".") != 2:
+        return None, (jsonify({"error": "Malformed access token"}), 401)
 
     try:
         supabase = get_supabase_client()
@@ -182,8 +187,9 @@ def send_message(room_id: str):
         image_name_for_message = None
         image_mime_type_for_message = None
 
-        if image_file and image_file.filename:
-            image_name_for_reasoning = image_file.filename
+        uploaded_image = bool(image_file and image_file.filename)
+        if uploaded_image:
+            image_name_for_reasoning = secure_filename(image_file.filename)
             image_mime_type_for_reasoning = image_file.mimetype or "application/octet-stream"
             image_bytes = image_file.read()
             image_b64_for_reasoning = base64.b64encode(image_bytes).decode("ascii")
@@ -228,9 +234,25 @@ def send_message(room_id: str):
         else:
             return jsonify({"error": "Please upload an image to start this chat."}), 400
 
+        extracted_features = {}
+        extraction_record = None
+        extraction_error = None
+        if uploaded_image and image_path:
+            try:
+                extracted_features = extract_features(image_path)
+                extraction_record = add_extraction_record(
+                    features=extracted_features,
+                    image_name=image_name_for_reasoning or "uploaded_image",
+                    image_path=image_path,
+                    source="chat",
+                )
+            except Exception as exc:
+                extracted_features = {}
+                extraction_error = str(exc)
+
         try:
             assistant_text = generate_with_ollama(
-                features={},
+                features=extracted_features,
                 image_path=image_path,
                 user_prompt=prompt,
                 ollama_model=model,
@@ -266,6 +288,8 @@ def send_message(room_id: str):
             {
                 "user_message": user_message,
                 "assistant_message": assistant_message,
+                "extraction": extraction_record,
+                "extraction_error": extraction_error,
             }
         ), 201
     except Exception as exc:

@@ -22,7 +22,7 @@ def _extract_bearer_token(auth_header: str) -> Optional[str]:
 @auth_bp.route("/signup", methods=["POST"])
 def signup():
     payload = request.get_json(silent=True) or {}
-    email = payload.get("email")
+    email = (payload.get("email") or "").strip().lower()
     password = payload.get("password")
 
     if not email or not password:
@@ -47,7 +47,7 @@ def signup():
 @auth_bp.route("/login", methods=["POST"])
 def login():
     payload = request.get_json(silent=True) or {}
-    email = payload.get("email")
+    email = (payload.get("email") or "").strip().lower()
     password = payload.get("password")
 
     if not email or not password:
@@ -66,7 +66,12 @@ def login():
             }
         )
     except (AuthApiError, ValueError) as exc:
-        return jsonify({"error": str(exc)}), 401
+        message = str(exc)
+        if "Invalid login credentials" in message:
+            message = (
+                "Invalid login credentials. Check your email/password and confirm your email if signup requires verification."
+            )
+        return jsonify({"error": message}), 401
     except Exception as exc:
         return jsonify({"error": f"unexpected error: {exc}"}), 500
 
