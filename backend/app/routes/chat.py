@@ -7,6 +7,7 @@ from flask import Blueprint, jsonify, request
 from supabase import AuthApiError
 from werkzeug.utils import secure_filename
 
+from app.services.db import get_model_by_id
 from app.services.extraction_store import add_extraction_record
 from app.services.ollama_service import generate_with_ollama
 from app.services.supabase_client import get_supabase_client
@@ -161,6 +162,7 @@ def send_message(room_id: str):
 
     prompt = (request.form.get("prompt") or "").strip()
     model = (request.form.get("model") or "qwen3-vl:8b").strip() or "qwen3-vl:8b"
+    model_id = (request.form.get("model_id") or "").strip()
 
     if not prompt:
         return jsonify({"error": "prompt is required"}), 400
@@ -236,10 +238,17 @@ def send_message(room_id: str):
         extracted_features = {}
         extraction_record = None
         extraction_error = None
-        if uploaded_image and image_path:
-            from app.services.feature_extractor import extract_features
+        if image_path and (uploaded_image or model_id):
+            from app.services.feature_extractor import extract_features_with_model
+
             try:
-                extracted_features = extract_features(image_path)
+                selected_model = None
+                if model_id:
+                    selected_model = get_model_by_id(model_id)
+                    if not selected_model:
+                        return jsonify({"error": "Selected model not found"}), 404
+
+                extracted_features = extract_features_with_model(image_path, selected_model)
                 extraction_record = add_extraction_record(
                     features=extracted_features,
                     image_name=image_name_for_reasoning or "uploaded_image",
@@ -247,6 +256,8 @@ def send_message(room_id: str):
                     source="chat",
                 )
             except Exception as exc:
+                if model_id:
+                    return jsonify({"error": f"Selected model execution failed: {str(exc)}"}), 502
                 extracted_features = {}
                 extraction_error = str(exc)
 
@@ -294,4 +305,5 @@ def send_message(room_id: str):
         ), 201
     except Exception as exc:
         return jsonify({"error": f"failed to send message: {exc}"}), 500
+
 

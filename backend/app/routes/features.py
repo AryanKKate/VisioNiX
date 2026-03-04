@@ -43,9 +43,12 @@ def extract():
     if not file.filename:
         return jsonify({"error": "Empty file name"}), 400
 
-    model_id = request.form.get("model_id")
-    if not model_id:
-        return jsonify({"error": "model_id is required"}), 400
+    model_id = (request.form.get("model_id") or "").strip()
+    selected_model = None
+    if model_id:
+        selected_model = get_model_by_id(model_id)
+        if not selected_model:
+            return jsonify({"error": "Model not found"}), 404
 
     user_id = request.user["sub"]
 
@@ -56,7 +59,7 @@ def extract():
     file.save(path)
 
     try:
-        features = extract_features_with_model(path, model_id)
+        features = extract_features_with_model(path, selected_model)
     except Exception as exc:
         return jsonify({"error": f"Model execution failed: {str(exc)}"}), 500
 
@@ -70,7 +73,7 @@ def extract():
             "caption": features["caption"],
             "objects": features["objects"],
             "scene": features["scene_labels"],
-            "model_id": model_id,
+            "model_id": model_id or None,
             "user_id": user_id,
         },
     )

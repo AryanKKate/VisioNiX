@@ -182,18 +182,27 @@ def _extract_from_hf(image_path, model_url):
 # ==============================
 # NEW: SMART ROUTER FUNCTION
 # ==============================
-def extract_features_with_model(image_path, model_id):
-    """
-    model -> DB model object
-    """
+def extract_features_with_model(image_path, model=None):
+    """Use HF extraction when a remote model URL is available."""
+    if not model:
+        return extract_features(image_path)
 
-    # LOCAL DEFAULT MODEL
-    print(model_id)
-    if model_id:
-        return  _extract_from_hf(image_path, model_id["hf_space_url"]) 
+    if isinstance(model, str):
+        model_url = model.strip()
+    elif isinstance(model, dict):
+        model_url = (
+            model.get("hf_space_url")
+            or model.get("hf_url")
+            or model.get("endpoint_url")
+            or ""
+        ).strip()
+    else:
+        raise ValueError("Invalid model payload; expected dict or URL string.")
 
-    # HF MODEL
-    return extract_features(image_path)
+    if not model_url:
+        raise ValueError("Selected model does not have a valid hf_space_url.")
+
+    return _extract_from_hf(image_path, model_url)
 
 
 # ==============================
