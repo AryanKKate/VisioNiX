@@ -29,6 +29,16 @@ export default function ExtractionDetails({ extraction }) {
     URL.revokeObjectURL(url);
   };
 
+  const textureFeatures = Array.isArray(extraction.texture_features)
+    ? extraction.texture_features
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value))
+    : [];
+  const maxTextureMagnitude =
+    textureFeatures.length > 0
+      ? Math.max(...textureFeatures.map((value) => Math.abs(value)), 1)
+      : 1;
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -147,18 +157,20 @@ export default function ExtractionDetails({ extraction }) {
       {/* Texture Features */}
       <div className="bg-secondary p-4 rounded-lg border border-border">
         <h3 className="font-semibold text-light mb-3">Texture Features</h3>
-        {extraction.texture_features && extraction.texture_features.length > 0 ? (
+        {textureFeatures.length > 0 ? (
           <div className="space-y-2">
-            {extraction.texture_features.map((feature, idx) => (
+            {textureFeatures.map((feature, idx) => (
               <div key={idx}>
                 <div className="flex justify-between text-sm mb-1">
                   <span className="text-text-secondary">Feature {idx + 1}</span>
                   <span className="font-semibold text-light">{feature.toFixed(4)}</span>
                 </div>
-                <div className="w-full bg-primary rounded-full h-2">
+                <div className="w-full bg-primary rounded-full h-2 overflow-hidden">
                   <div
                     className="bg-surface-light h-2 rounded-full"
-                    style={{ width: `${feature * 100}%` }}
+                    style={{
+                      width: `${Math.min((Math.abs(feature) / maxTextureMagnitude) * 100, 100)}%`
+                    }}
                   />
                 </div>
               </div>

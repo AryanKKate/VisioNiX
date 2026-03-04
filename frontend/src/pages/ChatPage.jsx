@@ -1,23 +1,32 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, MessageSquare, Trash2, LogOut, Image, ChevronDown, Search } from 'lucide-react';
+import { Plus, MessageSquare, Trash2, LogOut, Image, ChevronDown, Search, SlidersHorizontal } from 'lucide-react';
+import { jwtDecode } from 'jwt-decode';
 
 import { useAuth } from '../hooks/useAuth';
 import ChatWindow from '../components/ChatWindow';
+import { supabase } from '../components/supabase';
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:5000';
 const isJwt = (value) => typeof value === 'string' && value.split('.').length === 3;
+const DEFAULT_MODEL = {
+  id: '__default__',
+  name: 'VisioNiX 1.0',
+  is_virtual: true,
+};
 
 export default function ChatPage() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const token = localStorage.getItem('token');
 
-  const [selectedModel, setSelectedModel] = useState('normal');
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [chats, setChats] = useState([]);
   const [currentChatId, setCurrentChatId] = useState(null);
+  const [modelsLoading, setModelsLoading] = useState(true);
+  const [models, setModels] = useState([DEFAULT_MODEL]);
+  const [selectedModelId, setSelectedModelId] = useState(DEFAULT_MODEL.id);
 
   useEffect(() => {
     if (!user) {
@@ -66,6 +75,50 @@ export default function ChatPage() {
   useEffect(() => {
     loadRooms();
   }, [loadRooms]);
+
+  const loadModels = useCallback(async () => {
+    try {
+      setModelsLoading(true);
+
+      if (!token || !isJwt(token)) {
+        setModels([DEFAULT_MODEL]);
+        setSelectedModelId(DEFAULT_MODEL.id);
+        return;
+      }
+
+      const decoded = jwtDecode(token);
+      const userId = decoded.sub;
+      if (!userId) {
+        setModels([DEFAULT_MODEL]);
+        setSelectedModelId(DEFAULT_MODEL.id);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('models')
+        .select('*')
+        .or(`owner_id.eq.${userId},is_default.eq.true`)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+
+      const combinedModels = [DEFAULT_MODEL, ...(data || [])];
+      setModels(combinedModels);
+      setSelectedModelId((prev) =>
+        combinedModels.some((model) => model.id === prev) ? prev : DEFAULT_MODEL.id
+      );
+    } catch (error) {
+      console.error('Load models failed:', error);
+      setModels([DEFAULT_MODEL]);
+      setSelectedModelId(DEFAULT_MODEL.id);
+    } finally {
+      setModelsLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    loadModels();
+  }, [loadModels]);
 
   const handleLogout = () => {
     logout();
@@ -133,11 +186,7 @@ export default function ChatPage() {
     }
   };
 
-  const models = [
-    { id: 'normal', label: 'Normal' },
-    { id: 'qwen3-vl:8b', label: 'Qwen3-VL' },
-  ];
-  const currentModel = models.find((m) => m.id === selectedModel);
+  const currentModel = models.find((m) => m.id === selectedModelId);
 
   const filteredChats = chats.filter((chat) =>
     (chat.title || 'Untitled Chat').toLowerCase().includes(searchTerm.toLowerCase())
@@ -224,42 +273,51 @@ export default function ChatPage() {
               onClick={() => setShowModelDropdown(!showModelDropdown)}
               className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg hover:bg-hover transition-colors text-light"
             >
-              <span className="font-medium">{currentModel?.label}</span>
+              <span className="font-medium">
+                {modelsLoading ? 'Loading models...' : currentModel?.name || 'Select Model'}
+              </span>
               <ChevronDown size={18} className="text-text-secondary" />
             </button>
 
             {showModelDropdown && (
-              <div className="absolute left-1/2 -translate-x-1/2 mt-2 w-40 bg-secondary border border-border rounded-lg shadow-lg z-50">
+              <div className="absolute left-1/2 -translate-x-1/2 mt-2 w-56 max-h-64 overflow-y-auto bg-secondary border border-border rounded-lg shadow-lg z-50">
                 {models.map((model) => (
                   <button
                     key={model.id}
                     onClick={() => {
-                      setSelectedModel(model.id);
+                      setSelectedModelId(model.id);
                       setShowModelDropdown(false);
                     }}
                     className={`w-full px-4 py-2 text-left hover:bg-hover transition-colors border-b border-border last:border-b-0 text-sm text-light ${
-                      selectedModel === model.id ? 'bg-hover font-semibold' : ''
+                      selectedModelId === model.id ? 'bg-hover font-semibold' : ''
                     }`}
                   >
-                    {model.label}
+                    {model.name}
                   </button>
                 ))}
               </div>
             )}
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 -mr-1 md:-mr-2">
+            <button
+              onClick={() => navigate('/finetune')}
+              className="p-2.5 hover:bg-hover rounded-lg transition-colors"
+              title="Fine-tune Models"
+            >
+              <SlidersHorizontal size={24} className="text-light" />
+            </button>
             <button
               onClick={() => navigate('/extractions')}
-              className="p-2 hover:bg-hover rounded-lg transition-colors"
+              className="p-2.5 hover:bg-hover rounded-lg transition-colors"
               title="View Extractions"
             >
-              <Image size={20} className="text-light" />
+              <Image size={24} className="text-light" />
             </button>
           </div>
         </div>
 
-        <ChatWindow model={selectedModel} currentChatId={currentChatId} />
+        <ChatWindow currentChatId={currentChatId} selectedModelId={selectedModelId} />
       </div>
     </div>
   );

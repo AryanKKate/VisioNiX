@@ -31,13 +31,15 @@ create index if not exists idx_chat_messages_room_id_created_at
 alter table public.chat_rooms enable row level security;
 alter table public.chat_messages enable row level security;
 
-create policy if not exists "users_can_manage_own_rooms"
+drop policy if exists "users_can_manage_own_rooms" on public.chat_rooms;
+create policy "users_can_manage_own_rooms"
   on public.chat_rooms
   for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
-create policy if not exists "users_can_manage_messages_in_own_rooms"
+drop policy if exists "users_can_manage_messages_in_own_rooms" on public.chat_messages;
+create policy "users_can_manage_messages_in_own_rooms"
   on public.chat_messages
   for all
   using (

@@ -5,6 +5,7 @@ import { ExtractionProvider } from './context/ExtractionContext';
 import AuthPage from './pages/AuthPage';
 import ChatPage from './pages/ChatPage';
 import ExtractionPage from './pages/ExtractionPage';
+import FineTunePage from './pages/FineTunePage';
 import './index.css';
 
 function App() {
@@ -17,6 +18,7 @@ function App() {
               <Route path="/" element={<AuthPage />} />
               <Route path="/chat" element={<ChatPage />} />
               <Route path="/extractions" element={<ExtractionPage />} />
+              <Route path="/finetune" element={<FineTunePage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </ExtractionProvider>
